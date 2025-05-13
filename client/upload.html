@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Roboto', sans-serif; }
+    .btn { transition: all 0.3s ease; }
+    .btn:hover { transform: scale(1.05); }
+  </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+  <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">Convert Image to 3D</h1>
+    <input type="file" id="imageInput" accept="image/*" class="mb-4 w-full p-2 border rounded">
+    <button id="convertBtn" class="w-full bg-blue-600 text-white py-2 rounded-lg btn hover:bg-blue-700">
+      Convert to GLB
+    </button>
+    <div id="progress" class="mt-4 text-gray-600"></div>
+    <a id="viewLink" class="hidden mt-4 text-blue-600 underline" href="#">View 3D Model</a>
+  </div>
+  <script>
+    const backendUrl = 'YOUR_RENDER_URL'; // Replace with your Render URL
+    const imageInput = document.getElementById('imageInput');
+    const convertBtn = document.getElementById('convertBtn');
+    const progress = document.getElementById('progress');
+    const viewLink = document.getElementById('viewLink');
+
+    convertBtn.addEventListener('click', async () => {
+      const file = imageInput.files[0];
+      if (!file) {
+        progress.textContent = 'Please select an image.';
+        return;
+      }
+
+      progress.textContent = 'Uploading...';
+      convertBtn.disabled = true;
+
+      const formData = new FormData();
+      formData.append('image', file);
+
+      try {
+        // Start conversion
+        const response = await fetch(`${backendUrl}/convert-to-glb`, {
+          method: 'POST',
+          body: formData,
+        });
+        const { jobId } = await response.json();
+
+        // Poll for status
+        const pollStatus = async () => {
+          const statusResponse = await fetch(`${backendUrl}/job-status/${jobId}`);
+          const status = await statusResponse.json();
+
+          progress.textContent = `Status: ${status.status || 'Processing...'}`;
+
+          if (status.status === 'completed' && status.glbUrl) {
+            progress.textContent = 'Conversion complete!';
+            // Save to Wix dataset
+            const wixApiUrl = '/_functions/saveGlb';
+            await fetch(wixApiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jobId, glbUrl: status.glbUrl, title: file.name }),
+            });
+            viewLink.href = `/3d-viewer/${jobId}`;
+            viewLink.classList.remove('hidden');
+            convertBtn.disabled = false;
+          } else {
+            setTimeout(pollStatus, 5000); // Poll every 5 seconds
+          }
+        };
+        pollStatus();
+      } catch (error) {
+        progress.textContent = 'Error: ' + error.message;
+        convertBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
